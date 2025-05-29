@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Settings, Brain } from "lucide-react";
+import { Send, Brain } from "lucide-react";
 import { ChatMessage } from "@/components/chat-message";
 import { VoiceInput } from "@/components/voice-input";
 import { useSpeech } from "@/hooks/use-speech";
@@ -17,6 +17,7 @@ const SESSION_ID = `session_${Date.now()}_${Math.random().toString(36).substr(2,
 export default function Chat() {
   const [inputMessage, setInputMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isVoiceInput, setIsVoiceInput] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const { speak } = useSpeech();
@@ -48,8 +49,10 @@ export default function Chat() {
       
       setMessages(prev => [...prev, assistantMessage]);
       
-      // Speak the response
-      speak(response.response);
+      // Only speak the response if it was triggered by voice input
+      if (isVoiceInput) {
+        speak(response.response);
+      }
       
       // Invalidate and refetch conversation history
       queryClient.invalidateQueries({ 
@@ -105,6 +108,9 @@ export default function Chat() {
       message,
       sessionId: SESSION_ID,
     });
+    
+    // Reset voice input flag for text messages
+    setIsVoiceInput(false);
   };
 
   // Handle keyboard shortcuts
@@ -118,6 +124,7 @@ export default function Chat() {
   // Handle voice transcript
   const handleVoiceTranscript = (transcript: string) => {
     setInputMessage(transcript);
+    setIsVoiceInput(true);
     // Auto-send voice messages
     setTimeout(() => {
       if (transcript.trim()) {
@@ -158,17 +165,9 @@ export default function Chat() {
     <div className="flex flex-col min-h-screen max-w-4xl mx-auto bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-center">
           <h1 className="text-4xl font-bold text-slate-800 tracking-tight">GOSH-MIND</h1>
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-800">
-              <Settings className="w-5 h-5" />
-            </Button>
-          </div>
         </div>
-        <p className="text-center text-slate-600 mt-2 text-sm">
-          Your AI Assistant with Voice & Text
-        </p>
       </header>
 
       {/* Chat Container */}

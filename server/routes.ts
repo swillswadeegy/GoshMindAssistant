@@ -42,94 +42,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updatedMessages = [...conversation.messages, userMessage];
 
-      try {
-        // Create thread
-        const thread = await openai.beta.threads.create();
+      // Create thread
+      const thread = await openai.beta.threads.create();
+      
+      // Add message to thread
+      await openai.beta.threads.messages.create(thread.id, {
+        role: "user",
+        content: message,
+      });
+
+      // Create and poll run
+      const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
+        assistant_id: assistantId,
+      });
+
+      if (run.status === 'completed') {
+        // Get messages
+        const messages = await openai.beta.threads.messages.list(thread.id);
+        const assistantMessage = messages.data.find(msg => msg.role === 'assistant');
         
-        // Add message to thread
-        await openai.beta.threads.messages.create(thread.id, {
-          role: "user",
-          content: message,
-        });
+        if (assistantMessage && assistantMessage.content[0] && assistantMessage.content[0].type === 'text') {
+          const assistantResponse = assistantMessage.content[0].text.value;
 
-        // Create and poll run
-        const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
-          assistant_id: assistantId,
-        });
+          // Add assistant message to conversation
+          const assistantReplyMessage: Message = {
+            role: "assistant",
+            content: assistantResponse,
+            timestamp: new Date().toISOString(),
+          };
 
-        if (run.status === 'completed') {
-          // Get messages
-          const messages = await openai.beta.threads.messages.list(thread.id);
-          const assistantMessage = messages.data.find(msg => msg.role === 'assistant');
-          
-          if (assistantMessage && assistantMessage.content[0] && assistantMessage.content[0].type === 'text') {
-            const assistantResponse = assistantMessage.content[0].text.value;
+          const finalMessages = [...updatedMessages, assistantReplyMessage];
+          await storage.updateConversation(sessionId, finalMessages);
 
-            // Add assistant message to conversation
-            const assistantReplyMessage: Message = {
-              role: "assistant",
-              content: assistantResponse,
-              timestamp: new Date().toISOString(),
-            };
+          const response: ChatResponse = {
+            response: assistantResponse,
+            sessionId,
+          };
 
-            const finalMessages = [...updatedMessages, assistantReplyMessage];
-            await storage.updateConversation(sessionId, finalMessages);
-
-            const response: ChatResponse = {
-              response: assistantResponse,
-              sessionId,
-            };
-
-            res.json(response);
-          } else {
-            throw new Error("No valid assistant response found");
-          }
+          res.json(response);
         } else {
-          throw new Error(`Assistant run failed with status: ${run.status}`);
+          throw new Error("No valid assistant response found");
         }
-      } catch (assistantError) {
-        console.log("Assistant API error, falling back to chat completion:", assistantError);
-        
-        // Fallback to chat completion
-        const openaiMessages = updatedMessages.map(msg => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: "You are GOSH-MIND, a helpful AI assistant. Provide clear, concise, and helpful responses to user questions. Be friendly and conversational while maintaining professionalism."
-            },
-            ...openaiMessages
-          ],
-          max_tokens: 1000,
-          temperature: 0.7,
-        });
-
-        const assistantResponse = completion.choices[0]?.message?.content;
-        if (!assistantResponse) {
-          throw new Error("No response from OpenAI");
-        }
-
-        // Add assistant message to conversation
-        const assistantMessage: Message = {
-          role: "assistant",
-          content: assistantResponse,
-          timestamp: new Date().toISOString(),
-        };
-
-        const finalMessages = [...updatedMessages, assistantMessage];
-        await storage.updateConversation(sessionId, finalMessages);
-
-        const response: ChatResponse = {
-          response: assistantResponse,
-          sessionId,
-        };
-
-        res.json(response);
+      } else {
+        throw new Error(`Assistant run failed with status: ${run.status}`);
       }
 
     } catch (error) {
