@@ -24,10 +24,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create a new thread for each conversation
-      const thread = await openai.beta.threads.create();
-      const threadId = thread.id;
-
       // Get or create conversation
       let conversation = await storage.getConversation(sessionId);
       if (!conversation) {
@@ -37,67 +33,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Add user message to the thread
-      await openai.beta.threads.messages.create(threadId, {
+      // Add user message to conversation
+      const userMessage: Message = {
         role: "user",
         content: message,
-      });
+        timestamp: new Date().toISOString(),
+      };
 
-      // Run the assistant
-      const run = await openai.beta.threads.runs.create(threadId, {
-        assistant_id: assistantId,
-      });
+      const updatedMessages = [...conversation.messages, userMessage];
 
-      // Wait for completion
-      let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-      
-      while (runStatus.status === 'queued' || runStatus.status === 'in_progress') {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-      }
-
-      if (runStatus.status === 'completed') {
-        // Get the assistant's response
-        const messages = await openai.beta.threads.messages.list(threadId);
-        const assistantMessage = messages.data[0];
+      try {
+        // Create thread
+        const thread = await openai.beta.threads.create();
         
-        if (assistantMessage && assistantMessage.role === 'assistant') {
-          const content = assistantMessage.content[0];
-          let assistantResponse: string;
+        // Add message to thread
+        await openai.beta.threads.messages.create(thread.id, {
+          role: "user",
+          content: message,
+        });
+
+        // Create and poll run
+        const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
+          assistant_id: assistantId,
+        });
+
+        if (run.status === 'completed') {
+          // Get messages
+          const messages = await openai.beta.threads.messages.list(thread.id);
+          const assistantMessage = messages.data.find(msg => msg.role === 'assistant');
           
-          if (content.type === 'text') {
-            assistantResponse = content.text.value;
+          if (assistantMessage && assistantMessage.content[0] && assistantMessage.content[0].type === 'text') {
+            const assistantResponse = assistantMessage.content[0].text.value;
+
+            // Add assistant message to conversation
+            const assistantReplyMessage: Message = {
+              role: "assistant",
+              content: assistantResponse,
+              timestamp: new Date().toISOString(),
+            };
+
+            const finalMessages = [...updatedMessages, assistantReplyMessage];
+            await storage.updateConversation(sessionId, finalMessages);
+
+            const response: ChatResponse = {
+              response: assistantResponse,
+              sessionId,
+            };
+
+            res.json(response);
           } else {
-            assistantResponse = "I received your message but couldn't process the response format.";
+            throw new Error("No valid assistant response found");
           }
-
-          // Add both messages to our conversation storage
-          const userMessage: Message = {
-            role: "user",
-            content: message,
-            timestamp: new Date().toISOString(),
-          };
-
-          const assistantReplyMessage: Message = {
-            role: "assistant",
-            content: assistantResponse,
-            timestamp: new Date().toISOString(),
-          };
-
-          const updatedMessages = [...conversation.messages, userMessage, assistantReplyMessage];
-          await storage.updateConversation(sessionId, updatedMessages);
-
-          const response: ChatResponse = {
-            response: assistantResponse,
-            sessionId,
-          };
-
-          res.json(response);
         } else {
-          throw new Error("No assistant response found");
+          throw new Error(`Assistant run failed with status: ${run.status}`);
         }
-      } else {
-        throw new Error(`Assistant run failed with status: ${runStatus.status}`);
+      } catch (assistantError) {
+        console.log("Assistant API error, falling back to chat completion:", assistantError);
+        
+        // Fallback to chat completion
+        const openaiMessages = updatedMessages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You are GOSH-MIND, a helpful AI assistant. Provide clear, concise, and helpful responses to user questions. Be friendly and conversational while maintaining professionalism."
+            },
+            ...openaiMessages
+          ],
+          max_tokens: 1000,
+          temperature: 0.7,
+        });
+
+        const assistantResponse = completion.choices[0]?.message?.content;
+        if (!assistantResponse) {
+          throw new Error("No response from OpenAI");
+        }
+
+        // Add assistant message to conversation
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: assistantResponse,
+          timestamp: new Date().toISOString(),
+        };
+
+        const finalMessages = [...updatedMessages, assistantMessage];
+        await storage.updateConversation(sessionId, finalMessages);
+
+        const response: ChatResponse = {
+          response: assistantResponse,
+          sessionId,
+        };
+
+        res.json(response);
       }
 
     } catch (error) {
