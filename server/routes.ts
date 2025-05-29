@@ -24,24 +24,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Create a new thread for each conversation
+      const thread = await openai.beta.threads.create();
+      const threadId = thread.id;
+
       // Get or create conversation
       let conversation = await storage.getConversation(sessionId);
-      let threadId: string;
-
       if (!conversation) {
-        // Create a new thread for this conversation
-        const thread = await openai.beta.threads.create();
-        threadId = thread.id;
-        
         conversation = await storage.createConversation({
           sessionId,
           messages: [],
         });
-      } else {
-        // For existing conversations, we'll need to store the thread ID
-        // For now, create a new thread each time (you can optimize this later)
-        const thread = await openai.beta.threads.create();
-        threadId = thread.id;
       }
 
       // Add user message to the thread
