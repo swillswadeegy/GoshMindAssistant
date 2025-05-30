@@ -22,12 +22,12 @@ export function log(message: string, source = "express") {
 }
 
 // YOUR EXISTING setupVite FUNCTION (FOR DEVELOPMENT - NO CHANGES NEEDED HERE FOR PRODUCTION)
-export async function setupVite(app: Express, server: Server) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true,
-  };
+//export async function setupVite(app: Express, server: Server) {
+  //const serverOptions = {
+    //middlewareMode: true,
+    //hmr: { server },
+    //allowedHosts: true,
+  //};
 
   const vite = await createViteServer({
     ...viteConfig,
