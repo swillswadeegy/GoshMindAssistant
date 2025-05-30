@@ -1,30 +1,37 @@
-// TEMPORARY server/index.ts
-import path from 'path'; // Keep this import
+// server/index.ts - Step towards original functionality
 
-console.log('--- TOP OF SIMPLIFIED SERVER/INDEX.TS ---');
-console.log(`Node.js version: ${process.version}`);
-console.log(`Current working directory: ${process.cwd()}`);
-console.log(`Filename (__filename via import.meta.url): ${import.meta.url}`); // Test import.meta.url
+console.log('[STEP_2_LOG] Top of server/index.ts execution.');
 
+import express from 'express';
+console.log('[STEP_2_LOG] Imported Express.');
+
+// Assuming log and serveStatic are exported from your server/vite.ts
+// Ensure server/vite.ts is in the same directory or adjust path.
+import { log as viteLog, serveStatic } from './vite';
+console.log('[STEP_2_LOG] Imported log and serveStatic from ./vite.');
+
+const app = express();
+console.log('[STEP_2_LOG] Express app created.');
+
+// We are in production mode (NODE_ENV=production is set by start command)
+viteLog("Calling serveStatic (ServeStatic_V3 version)...", "ServerIndex");
 try {
-    const testPath = path.resolve(process.cwd(), 'test');
-    console.log(`Test path.resolve(process.cwd(), 'test'): ${testPath}`);
+    serveStatic(app); // This will call the ServeStatic_V3 version
+    viteLog("Returned from serveStatic call.", "ServerIndex");
 } catch (e: any) {
-    console.error('Error during test path.resolve:', e);
+    viteLog(`ERROR during serveStatic call: ${e.message}`, "ServerIndex_ERROR");
+    console.error('[STEP_2_LOG] CRASH DURING serveStatic call:', e);
+    process.exit(1); // Exit if serveStatic setup itself crashes
 }
 
-const PORT = process.env.PORT || 3001;
 
-// Removed Express and all other imports/logic for this test
-const http = await import('http'); // Keep as dynamic import for now
-const server = http.createServer((req: any, res: any) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Ultra-Minimal Server OK\n');
-  console.log('Responded to a request on ultra-minimal server.');
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 5000; // Ensure PORT is a number
+console.log(`[STEP_2_LOG] Port configured: ${PORT}. Attempting to listen.`);
+
+// Use app.listen() now that we have an Express app
+app.listen(PORT, "0.0.0.0", () => {
+  viteLog(`Express server IS LISTENING on port ${PORT}`, "ServerIndexListen");
+  console.log(`[STEP_2_LOG] Express server IS LISTENING on port ${PORT}.`);
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`--- ULTRA-MINIMAL SERVER LISTENING ON PORT ${PORT} ---`);
-});
-
-console.log('--- BOTTOM OF SIMPLIFIED SERVER/INDEX.TS ---');
+console.log('[STEP_2_LOG] Bottom of server/index.ts synchronous execution.');
