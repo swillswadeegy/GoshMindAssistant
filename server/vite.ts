@@ -72,44 +72,49 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
-// --- REPLACE YOUR OLD serveStatic WITH THIS NEW VERSION ---
+
+
 export function serveStatic(app: Express) {
   log("Attempting to configure static file serving for production.", "ServeStatic");
 
-  // Robustly get the directory name of the current module (dist/vite.js when deployed)
-  const currentModulePath = fileURLToPath(import.meta.url);
-  // When dist/vite.js runs, currentModuleDir will be PROJECT_ROOT/dist/
-  const currentModuleDir = path.dirname(currentModulePath);
-  log(`Current module path (import.meta.url resolved): ${currentModulePath}`, "ServeStatic");
-  log(`Current module directory (expected PROJECT_ROOT/dist/): ${currentModuleDir}`, "ServeStatic");
+  // --- MODIFIED PATH LOGIC ---
+  // process.cwd() should be '/app' in Railway. Our server script is 'dist/index.js'.
+  // So, the directory containing our running script (dist/index.js) is /app/dist
+  const scriptRunningFromDir = path.resolve(process.cwd(), "dist");
+  log(`Script is assumed to be running from within: ${scriptRunningFromDir}`, "ServeStatic");
+  log(`(Derived from process.cwd(): ${process.cwd()} and 'dist')`, "ServeStatic");
+
 
   const publicDirName = "public";
-  // This should resolve to PROJECT_ROOT/dist/public/
-  const distPath = path.resolve(currentModuleDir, publicDirName);
-  log(`Resolved 'distPath' for client assets (expected PROJECT_ROOT/dist/public/): ${distPath}`, "ServeStatic");
+  // Construct path to PROJECT_ROOT/dist/public/
+  const distPath = path.join(scriptRunningFromDir, publicDirName);
+  log(`Resolved 'distPath' for client assets (expected /app/dist/public/): ${distPath}`, "ServeStatic");
+  // --- END OF MODIFIED PATH LOGIC ---
 
+
+  // The rest of the serveStatic function (fs.existsSync checks, app.use, etc.)
+  // can remain the same as the previous detailed logging version.
+  // For example:
   if (!fs.existsSync(distPath)) {
-    const errorMsg = `CRITICAL: Build directory '${publicDirName}' NOT FOUND at calculated path: ${distPath}. Make sure 'vite build' ran and output to 'dist/public'.`;
+    const errorMsg = `CRITICAL: Build directory '${publicDirName}' NOT FOUND at calculated path: ${distPath}.`;
     log(errorMsg, "ServeStatic_ERROR");
     try {
-      const parentDirContents = fs.readdirSync(currentModuleDir);
-      log(`Contents of ${currentModuleDir} (expected to be PROJECT_ROOT/dist/): ${parentDirContents.join(', ')}`, "ServeStatic_INFO");
+      const parentDirContents = fs.readdirSync(scriptRunningFromDir);
+      log(`Contents of ${scriptRunningFromDir}: ${parentDirContents.join(', ')}`, "ServeStatic_INFO");
     } catch (e: any) {
-      log(`Error listing contents of ${currentModuleDir}: ${e.message}`, "ServeStatic_ERROR");
+      log(`Error listing contents of ${scriptRunningFromDir}: ${e.message}`, "ServeStatic_ERROR");
     }
-    throw new Error(errorMsg); // This will crash the app, good for diagnostics
+    throw new Error(errorMsg);
   } else {
     log(`SUCCESS: Build directory '${publicDirName}' FOUND at: ${distPath}`, "ServeStatic");
     try {
       const publicDirContents = fs.readdirSync(distPath);
-      log(`Contents of ${distPath} (expected to be PROJECT_ROOT/dist/public/): ${publicDirContents.join(', ')}`, "ServeStatic_INFO");
+      log(`Contents of ${distPath}: ${publicDirContents.join(', ')}`, "ServeStatic_INFO");
     } catch (e: any) {
       log(`Error listing contents of ${distPath}: ${e.message}`, "ServeStatic_ERROR");
     }
   }
 
-  // Log incoming requests before they hit express.static
-  // This middleware needs to be added to the app instance *before* express.static
   app.use((req, _res, next) => {
     log(`Incoming request: ${req.method} ${req.originalUrl}`, "ServeStatic_Request");
     next();
@@ -119,7 +124,7 @@ export function serveStatic(app: Express) {
   log(`Express static middleware configured for path: ${distPath}`, "ServeStatic");
 
   app.use("*", (req, res) => {
-    const indexPath = path.resolve(distPath, "index.html");
+    const indexPath = path.resolve(distPath, "index.html"); // path.resolve or path.join is fine here
     log(`Fallback: Request for '${req.originalUrl}'. Attempting to serve index.html from: ${indexPath}`, "ServeStatic_Fallback");
 
     if (!fs.existsSync(indexPath)) {
