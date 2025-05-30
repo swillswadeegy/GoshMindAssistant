@@ -74,31 +74,6 @@ export async function setupVite(app: Express, server: Server) {
 
 
 
-export function serveStatic(app: Express) {
-  log("Attempting to configure static file serving for production.", "ServeStatic");
-
-  // --- MODIFIED PATH LOGIC ---
-  // process.cwd() should be '/app' in Railway. Our server script is 'dist/index.js'.
-  // So, the directory containing our running script (dist/index.js) is /app/dist
-  const scriptRunningFromDir = path.resolve(process.cwd(), "dist");
-  log(`Script is assumed to be running from within: ${scriptRunningFromDir}`, "ServeStatic");
-  log(`(Derived from process.cwd(): ${process.cwd()} and 'dist')`, "ServeStatic");
-
-
-  const publicDirName = "public";
-  // Construct path to PROJECT_ROOT/dist/public/
-  const distPath = path.join(scriptRunningFromDir, publicDirName);
-  log(`Resolved 'distPath' for client assets (expected /app/dist/public/): ${distPath}`, "ServeStatic");
-  // --- END OF MODIFIED PATH LOGIC ---
-
-
-// In server/vite.ts
-
-// ... (your existing imports: express, fs, path, createViteServer, createLogger, Server, viteConfig, nanoid, fileURLToPath) ...
-// ... (your existing viteLogger constant) ...
-// ... (your existing log function) ...
-// ... (your existing setupVite function) ...
-
 // --- THIS IS THE "ServeStatic_V3" VERSION ---
 export function serveStatic(app: Express) {
   log("Attempting to configure static file serving for production.", "ServeStatic_V3");
