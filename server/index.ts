@@ -1,72 +1,59 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+// --- START OF TEMPORARY server/index.ts FOR SMOKE TEST ---
+console.log(`[SMOKE_TEST_NODE] Node.js version: ${process.version}`);
+console.log(`[SMOKE_TEST_NODE] Current working directory: ${process.cwd()}`);
+console.log(`[SMOKE_TEST_ENV] RAW process.env.NODE_ENV: ${process.env.NODE_ENV}`);
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+import express from "express";
+const app = express(); // Initialize app early to use app.get('env')
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+console.log(`[SMOKE_TEST_ENV] app.get('env') result: ${app.get('env')}`);
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+// Simple log function for this test
+const smokeLog = (message: string) => console.log(`[SMOKE_TEST_APP] ${new Date().toISOString()} ${message}`);
 
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+smokeLog("Application script (server/index.ts) has started.");
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
+if (app.get("env") === "development") {
+    smokeLog("CRITICAL_PATH_CHECK: app.get('env') is 'development'. Attempting to run development setup (setupVite). This is unexpected on Railway.");
+    // To prevent actual setupVite from running and exiting during this test,
+    // we'll just log and not call it. If this log appears, we've found the core issue.
+} else {
+    smokeLog("CRITICAL_PATH_CHECK: app.get('env') is NOT 'development' (expected 'production'). Attempting to run production setup (serveStatic).");
+    // We'll also simplify this for now to just log
+}
 
-      log(logLine);
+const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+smokeLog(`Attempting to listen on port: ${port}`);
+
+// A minimal server to see if it can even start listening
+const http = await import('http');
+const minimalServer = http.createServer((req, res) => {
+    smokeLog(`Minimal server received request: ${req.method} ${req.url}`);
+    if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+        smokeLog("Responded to /health check OK");
+    } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Minimal Test Server - Not Found');
+        smokeLog(`Responded 404 for ${req.url}`);
     }
-  });
-
-  next();
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+minimalServer.listen(port, "0.0.0.0", () => {
+    smokeLog(`Minimal server IS LISTENING on port ${port}. If you see this, basic server start is OK.`);
+    smokeLog(`Next, check CRITICAL_PATH_CHECK logs to see if 'development' or 'production' path was taken.`);
+});
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+// Catch unhandled errors
+process.on('uncaughtException', (err, origin) => {
+  smokeLog(`!!! UNCAUGHT EXCEPTION !!! Origin: ${origin} Error: ${err.stack || err}`);
+  // process.exit(1); // Don't exit immediately, let logs flush if possible
+});
 
-    res.status(status).json({ message });
-    throw err;
-  });
+process.on('unhandledRejection', (reason, promise) => {
+  smokeLog(`!!! UNHANDLED REJECTION !!! At: ${promise}, reason: ${reason instanceof Error ? reason.stack : reason}`);
+  // process.exit(1);
+});
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
-
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-// Serve the app on the port provided by the environment (e.g., Railway), default to 5000 if not set.
-// This serves both the API and the client.
-const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
-})();
+// --- END OF TEMPORARY server/index.ts FOR SMOKE TEST ---
